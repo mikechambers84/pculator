@@ -37,6 +37,7 @@ The ROM files are already included in the Windows build under the releases secti
 - i430FX and i430HX chipset support
 
 ##### Known working guest OSes:
+- Windows 3.0
 - Windows NT 4.0
 - Windows 2000 Professional and Server
 - Various Linux distributions

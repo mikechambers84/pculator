@@ -1120,14 +1120,8 @@ void cpu_intcall(CPU_t* cpu, uint8_t intnum, uint8_t source, uint32_t err) {
 	int has_err;
 	int include_vm86;
 	int frame_size;
-	int real_style_int;
 
-	real_style_int = !cpu->protected_mode ||
-		(cpu->v86f &&
-			((source == INT_SOURCE_SOFTWARE) || (source == INT_SOURCE_INT3) || (source == INT_SOURCE_INTO)) &&
-			(cpu->iopl >= 3));
-
-	if (real_style_int) { // real mode or VM86 software interrupt with IOPL >= 3
+	if (!cpu->protected_mode) { // real mode
 		uint32_t real_flags = makeflagsword(cpu);
 		uint16_t target_cs;
 		uint16_t target_ip;
@@ -1817,7 +1811,7 @@ void op_ext_00(CPU_t* cpu) {
 			cpu->ldtl <<= 12;
 			cpu->ldtl |= 0xFFF;
 		}
-		cpu->ldtr = cpu_readw_sys(cpu, cpu->tempaddr32 + 2) | ((uint32_t)cpu_read_sys(cpu, cpu->tempaddr32 + 4) << 16) | (((uint32_t)cpu_read_sys(cpu, cpu->tempaddr32 + 7) >> 4) << 24);
+		cpu->ldtr = cpu_readw_sys(cpu, cpu->tempaddr32 + 2) | ((uint32_t)cpu_read_sys(cpu, cpu->tempaddr32 + 4) << 16) | ((uint32_t)cpu_read_sys(cpu, cpu->tempaddr32 + 7) << 24);
 		//debug_log(DEBUG_DETAIL, "Loaded LDT from %08X (LDT selector %04X (%04X), location is %08X, limit %u)", cpu->tempaddr32, cpu->ldt_selector, cpu->ldt_selector>>3, cpu->ldtr, cpu->ldtl);
 		break;
 	case 3: //LTR
@@ -4586,6 +4580,9 @@ void op_6B(CPU_t* cpu) {
 
 /* 6E INSB */
 void op_6C(CPU_t* cpu) {
+	if (!check_io_permission(cpu, cpu->regs.wordregs[regdx], 8)) 
+		return;
+
 	if (cpu->isaddr32) {
 		if (cpu->reptype && (cpu->regs.longregs[regecx] == 0)) {
 			return;
@@ -4643,6 +4640,9 @@ void op_6C(CPU_t* cpu) {
 
 /* 6D INSW */
 void op_6D(CPU_t* cpu) {
+	if (!check_io_permission(cpu, cpu->regs.wordregs[regdx], cpu->isoper32 ? 32 : 16)) 
+		return;
+
 	if (cpu->reptype) {
 		if (cpu->isaddr32) {
 			if (cpu->regs.longregs[regecx] == 0) return;
@@ -4701,6 +4701,9 @@ void op_6D(CPU_t* cpu) {
 
 /* 6E OUTSB */
 void op_6E(CPU_t* cpu) {
+	if (!check_io_permission(cpu, cpu->regs.wordregs[regdx], 8)) 
+		return;
+
 	if (cpu->reptype) {
 		if (cpu->isaddr32) {
 			if (cpu->regs.longregs[regecx] == 0) return;
@@ -4750,6 +4753,9 @@ void op_6E(CPU_t* cpu) {
 
 /* 6F OUTSW */
 void op_6F(CPU_t* cpu) {
+	if (!check_io_permission(cpu, cpu->regs.wordregs[regdx], cpu->isoper32 ? 32 : 16)) 
+		return;
+
 	if (cpu->reptype) {
 		if (cpu->isaddr32) {
 			if (cpu->regs.longregs[regecx] == 0) return;
@@ -6527,6 +6533,10 @@ void op_E3(CPU_t* cpu) {
 void op_E4(CPU_t* cpu) {
 	cpu->oper1b = getmem8(cpu, cpu->segcache[regcs], cpu->ip);
 	StepIP(cpu, 1);
+
+	if (!check_io_permission(cpu, cpu->oper1b, 8)) 
+		return;
+
 	cpu->regs.byteregs[regal] = (uint8_t)port_read(cpu, cpu->oper1b);
 }
 
@@ -6534,6 +6544,10 @@ void op_E4(CPU_t* cpu) {
 void op_E5(CPU_t* cpu) {
 	cpu->oper1b = getmem8(cpu, cpu->segcache[regcs], cpu->ip);
 	StepIP(cpu, 1);
+
+	if (!check_io_permission(cpu, cpu->oper1b, cpu->isoper32 ? 32 : 16)) 
+		return;
+
 	if (cpu->isoper32) {
 		cpu->regs.longregs[regeax] = port_readl(cpu, cpu->oper1b);
 	}
@@ -6546,6 +6560,10 @@ void op_E5(CPU_t* cpu) {
 void op_E6(CPU_t* cpu) {
 	cpu->oper1b = getmem8(cpu, cpu->segcache[regcs], cpu->ip);
 	StepIP(cpu, 1);
+
+	if (!check_io_permission(cpu, cpu->oper1b, 8)) 
+		return;
+
 	port_write(cpu, cpu->oper1b, cpu->regs.byteregs[regal]);
 }
 
@@ -6553,6 +6571,10 @@ void op_E6(CPU_t* cpu) {
 void op_E7(CPU_t* cpu) {
 	cpu->oper1b = getmem8(cpu, cpu->segcache[regcs], cpu->ip);
 	StepIP(cpu, 1);
+
+	if (!check_io_permission(cpu, cpu->oper1b, cpu->isoper32 ? 32 : 16)) 
+		return;
+
 	if (cpu->isoper32) {
 		port_writel(cpu, cpu->oper1b, cpu->regs.longregs[regeax]);
 	}
@@ -6628,12 +6650,20 @@ void op_EB(CPU_t* cpu) {
 /* EC IN cpu->regs.byteregs[regal] regdx */
 void op_EC(CPU_t* cpu) {
 	cpu->oper1 = cpu->regs.wordregs[regdx];
+
+	if (!check_io_permission(cpu, cpu->oper1, 8)) 
+		return;
+
 	cpu->regs.byteregs[regal] = (uint8_t)port_read(cpu, cpu->oper1);
 }
 
 /* ED IN eAX regdx */
 void op_ED(CPU_t* cpu) {
 	cpu->oper1 = cpu->regs.wordregs[regdx];
+
+	if (!check_io_permission(cpu, cpu->oper1, cpu->isoper32 ? 32 : 16)) 
+		return;
+
 	if (cpu->isoper32) {
 		cpu->regs.longregs[regeax] = port_readl(cpu, cpu->oper1);
 	}
@@ -6645,12 +6675,20 @@ void op_ED(CPU_t* cpu) {
 /* EE OUT regdx cpu->regs.byteregs[regal] */
 void op_EE(CPU_t* cpu) {
 	cpu->oper1 = cpu->regs.wordregs[regdx];
+
+	if (!check_io_permission(cpu, cpu->oper1, 8)) 
+		return;
+
 	port_write(cpu, cpu->oper1, cpu->regs.byteregs[regal]);
 }
 
 /* EF OUT regdx eAX */
 void op_EF(CPU_t* cpu) {
 	cpu->oper1 = cpu->regs.wordregs[regdx];
+
+	if (!check_io_permission(cpu, cpu->oper1, cpu->isoper32 ? 32 : 16)) 
+		return;
+
 	if (cpu->isoper32) {
 		port_writel(cpu, cpu->oper1, cpu->regs.longregs[regeax]);
 	}

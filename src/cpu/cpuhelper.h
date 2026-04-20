@@ -852,6 +852,25 @@ static void task_switch(CPU_t* cpu, uint16_t new_tss_selector, int reason) {
 	}
 }
 
+// IO read/writes check permission in pmode as well as V86
+static FUNC_FORCE_INLINE int check_io_permission(CPU_t* cpu, uint16_t port, int size) {
+	if (cpu->v86f || (cpu->protected_mode && cpu->cpl > cpu->iopl)) {
+		uint16_t io_map_base = cpu_readw_sys(cpu, cpu->trbase + 102);
+		for (int i = 0; i < (size / 8); i++) {
+			uint16_t cur_port = port + i;
+			if ((io_map_base + (cur_port >> 3)) >= cpu->trlimit) {
+				exception(cpu, 13, 0);
+				return 0;
+			}
+			if (cpu_read_sys(cpu, cpu->trbase + io_map_base + (cur_port >> 3)) & (1 << (cur_port & 7))) {
+				exception(cpu, 13, 0);
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+
 static void modregrm(CPU_t* cpu) {
 	cpu->addrbyte = getmem8(cpu, cpu->segcache[regcs], cpu->ip);
 	StepIP(cpu, 1);
